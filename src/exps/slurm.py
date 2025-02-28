@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import argparse
 import inspect
 import subprocess
@@ -25,13 +26,14 @@ except ImportError:
 def _try_interpret_python_path() -> Path:
     import os
 
-    if (path := os.environ.get("PYTHON_PATH")) is not None or (
+    # Prefer virtual environment 
+    if (path := os.environ.get("VIRTUAL_ENV")) is not None:
+        path = Path(path).resolve().expanduser()
+        path = path / "bin" / "python"
+    elif (path := os.environ.get("PYTHON_PATH")) is not None or (
         path := os.environ.get("CONDA_PYTHON_EXE")
     ) is not None:
         path = Path(path).resolve().expanduser()
-    elif (path := os.environ.get("VIRTUAL_ENV")) is not None:
-        path = Path(path).resolve().expanduser()
-        path = path / "bin" / "python"
     else:
         raise ValueError(
             "Could not find a Python path, please provide explicitly",
@@ -146,6 +148,8 @@ class Slurmable(Parsable):
             f.write(exec_script)
 
         print(exec_script)
+
+        bash = Path(shutil.which("bash"))
 
         subprocess.run([str(bash), str(exec_script_path)], check=True)  # noqa: S603
 
