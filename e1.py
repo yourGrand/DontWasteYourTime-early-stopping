@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING, Literal, TypeAlias
 import pandas as pd
 from rich import print
 
+# Import bug fix
+sys.path.append(str(Path(__file__).parent / "src"))
+
 from exps.experiments.exp1 import E1, PIPELINES
 from exps.methods import METHODS
 from exps.metrics import METRICS

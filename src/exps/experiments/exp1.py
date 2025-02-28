@@ -23,7 +23,7 @@ from exps.metrics import METRICS
 from exps.optimizers import OPTIMIZERS
 from exps.pipelines import PIPELINES
 from exps.slurm import Arg, Slurmable
-from exps.util import shrink_dataframe
+from exps.util import shrink_dataframee
 
 if TYPE_CHECKING:
     from amltk.pipeline import Node
