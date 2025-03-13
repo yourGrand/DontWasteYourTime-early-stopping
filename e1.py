@@ -595,6 +595,8 @@ def main():  # noqa: C901, PLR0915, PLR0912
         p.add_argument("--ignore", nargs="+", type=str)
         p.add_argument("--out", type=Path, required=True)
         p.add_argument("--no-config", action="store_true")
+        p.add_argument("--skip-failed", action="store_true", 
+                   help="Skip failed experiments without history.parquet file")
 
     with cmds("plot-stacked") as p:
         p.add_argument("--outpath", type=Path, default=Path("./plots"))
@@ -700,12 +702,12 @@ def main():  # noqa: C901, PLR0915, PLR0912
         }
 
         first = next(iter(_dfs.values()))
-        N_DATASETS = first["setting:task"].nunique()
+        n_datasets = first["setting:task"].nunique()
 
         # Quick sanity check...
         for key, _df in _dfs.items():
             model = "rf_classifier" if "RF" in key else "mlp_classifier"
-            assert _df["setting:task"].nunique() == N_DATASETS
+            assert _df["setting:task"].nunique() == n_datasets
             assert list(_df["setting:pipeline"].unique()) == [model]
 
         _dfs = {
@@ -713,7 +715,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
             for axis_title, _df in _dfs.items()
         }
 
-        title = f"Incumbent Traces, {N_DATASETS} Datasets"
+        title = f"Incumbent Traces, {n_datasets} Datasets"
         if args.merge_opt_into_method:
             for _, _df in _dfs.items():
                 _df.loc[:, "setting:opt-method"] = _df["setting:optimizer"].str.cat(
@@ -797,7 +799,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
         time_limit = args.time_limit
         cols = cols_needed_for_plotting(metric, args.n_splits)
         _df = pd.read_parquet(args.input, columns=cols)
-        N_DATASETS = _df["setting:task"].nunique()
+        n_datasets = _df["setting:task"].nunique()
 
         _df = _df[_df["setting:cv_early_stop_strategy"].isin(args.methods)]
 
@@ -816,7 +818,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
 
         match args.kind:
             case "incumbent-aggregated":
-                title = f"Normalized Cost of {method_title} with {args.n_splits} CV splits, {N_DATASETS} Datasets"  # noqa: E501
+                title = f"Normalized Cost of {method_title} with {args.n_splits} CV splits, {n_datasets} Datasets"  # noqa: E501
                 incumbent_traces_aggregated(
                     _df,
                     y=f"metric:{metric}",
@@ -837,7 +839,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
                     markevery=0.1,
                 )
             case "ranks-aggregated":
-                title = f"Rank Aggregation of {method_title} with {args.n_splits} CV splits, {N_DATASETS} Datasets"  # noqa: E501
+                title = f"Rank Aggregation of {method_title} with {args.n_splits} CV splits, {n_datasets} Datasets"  # noqa: E501
                 ranking_plots_aggregated(
                     _df,
                     y=f"metric:{metric}",
@@ -937,7 +939,20 @@ def main():  # noqa: C901, PLR0915, PLR0912
             print(f"Columns to load: {columns_to_load}")
 
             print(f"Collecting {len(array)} histories.")
-            _df = pd.concat([exp.history(columns=columns_to_load) for exp in array])
+            # _df = pd.concat([exp.history(columns=columns_to_load) for exp in array])
+
+            histories = []
+            for exp in array:
+                try:
+                    history = exp.history(columns=columns_to_load)
+                    histories.append(history)
+                except (FileNotFoundError, pd.errors.EmptyDataError):
+                    if args.skip_failed:
+                        print(f"Skipping experiment: {exp.unique_path} (no history file found)")
+                    else:
+                        raise
+
+            _df = pd.concat(histories) if histories else pd.DataFrame()
 
             print(f"Collected {len(_df)} rows")
             print(f"Size: {round(_df.memory_usage().sum() / 1e6, 2)} MB")
@@ -947,6 +962,10 @@ def main():  # noqa: C901, PLR0915, PLR0912
                 f"Size after shrinking: {round(_df.memory_usage().sum() / 1e6, 2)} MB",
             )
             print(f"Writing parquet to {args.out}")
+            # _df.to_parquet(args.out)
+
+            parent_dir = args.out.parent
+            parent_dir.mkdir(parents=True)
             _df.to_parquet(args.out)
 
         case "submit" | "run":
