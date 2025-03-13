@@ -1,5 +1,5 @@
 results-*
-plots*
+plots-*
 __pycache__
 .mypy_cache
 *.egg-info
