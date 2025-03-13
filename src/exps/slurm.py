@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 import shutil
 import argparse
 import inspect
@@ -45,6 +47,50 @@ def _try_interpret_python_path() -> Path:
             " Please provide an explicit python path",
         )
     return path
+
+
+def _try_interpret_python_path_v2() -> Path:
+
+    # First priority: use the current Python interpreter (most reliable)
+    path = Path(sys.executable).resolve()
+    if path.exists():
+        return path
+
+    # Second priority: check environment variables
+    if (path := os.environ.get("PYTHON_PATH")) is not None:
+        path = Path(path).resolve().expanduser()
+        if path.exists():
+            return path
+    
+    # Third priority: check conda-specific environment variables
+    if (path := os.environ.get("CONDA_PYTHON_EXE")) is not None:
+        path = Path(path).resolve().expanduser()
+        if path.exists():
+            return path
+    
+    if (conda_prefix := os.environ.get("CONDA_PREFIX")) is not None:
+        path = Path(conda_prefix) / "bin" / "python"
+        if path.exists():
+            return path
+    
+    # Fourth priority: check virtual env variables
+    if (path := os.environ.get("VIRTUAL_ENV")) is not None:
+        path = Path(path).resolve().expanduser() / "bin" / "python"
+        if path.exists():
+            return path
+    
+    # Use which command
+    try:
+        path_str = subprocess.check_output(["which", "python"], text=True).strip()
+        path = Path(path_str).resolve()
+        if path.exists():
+            return path
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+
+    raise ValueError(
+        "Could not find a Python path, please provide explicitly",
+    )
 
 
 def as_slurm_header(headers: dict[str, Any]) -> str:
@@ -107,7 +153,7 @@ class Slurmable(Parsable):
 
         field_values = self.item_fields()
         if python is None:
-            python = _try_interpret_python_path()
+            python = _try_interpret_python_path_v2()
 
         running_flag = self.flag("running").resolve().absolute()
         failed_flag = self.flag("failed").resolve().absolute()
