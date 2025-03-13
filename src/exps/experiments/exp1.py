@@ -222,7 +222,7 @@ def test_score_bagged_ensemble(
 
     bagged_model = voting_with_preffited_estimators(
         info.models,
-        voter=voter,
+        voter=voter, # type: ignore
         **kwargs,  # type: ignore
     )
     multimetric = _MultimetricScorer(scorers=info.scorers, raise_exc=True)
@@ -233,7 +233,7 @@ def test_score_bagged_ensemble(
 
 def run_it(run: E1) -> None:
     print(run)
-    sklearn.set_config(enable_metadata_routing=False, transform_output="pandas")
+    sklearn.set_config(enable_metadata_routing=False, transform_output="pandas") # type: ignore
     task_type, X, X_test, y, y_test = run.get_data()
     pipeline = PIPELINES[run.pipeline]
     metric = METRICS[run.metric]
