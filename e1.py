@@ -997,7 +997,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
                     array.submit(
                         name=args.expname,
                         slurm_headers={
-                            "partition": "ANON REPLACE ME",
+                            # "partition": "ANON REPLACE ME",
                             "mem": f"{first.memory_gb}G",
                             "time": seconds_to_slurm_time(
                                 int(5 * 60 + first.time_seconds * 1.5),
