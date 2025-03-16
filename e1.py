@@ -112,7 +112,7 @@ def cols_needed_for_plotting(
             for kind, split in product(("val", "test"), range(n_splits))
         ]
     else:
-        SPLIT_COLS = []
+        SPLIT_COLS = [] # type: ignore
     return CORE + METRIC_COLS + SPLIT_COLS
 
 

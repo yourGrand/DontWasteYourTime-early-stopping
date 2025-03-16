@@ -195,7 +195,10 @@ class Slurmable(Parsable):
 
         print(exec_script)
 
-        bash = Path(shutil.which("bash"))
+        bash_path = shutil.which("bash")
+        if bash_path is None:
+            raise ValueError("Cannot find 'bash' executable in PATH")
+        bash = Path(bash_path)
 
         subprocess.run([str(bash), str(exec_script_path)], check=True)  # noqa: S603
 
