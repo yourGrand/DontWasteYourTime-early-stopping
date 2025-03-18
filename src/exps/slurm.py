@@ -468,26 +468,65 @@ class ArraySlurmable(Sequence[T]):
         script_dir: Path | None = None,
         python: Path | str | None = None,
         limit: int | None = None,
+        job_array_limit: int = 1080,
     ) -> None:
+        
+        total_items = len(self.items)
         now = datetime.now().isoformat()
-        submission_script = self.submission_script(
-            name,
-            slurm_headers,
-            python=python,
-            generate_item_scripts=True,
-            limit=limit,
-        )
+        
         script_dir = script_dir or Path()
         script_dir = script_dir.absolute().resolve()
         script_dir.mkdir(parents=True, exist_ok=True)
-
-        script_path = script_dir / f"{name}-array-submit-{now}.sh"
-        with script_path.open("w") as f:
-            f.write(submission_script)
-
+        
         _sbatch = [sbatch] if isinstance(sbatch, str) else sbatch
+        if total_items <= job_array_limit:
+            now = datetime.now().isoformat()
+            submission_script = self.submission_script(
+                name,
+                slurm_headers,
+                python=python,
+                generate_item_scripts=True,
+                limit=limit,
+            )
+            script_dir = script_dir or Path()
+            script_dir = script_dir.absolute().resolve()
+            script_dir.mkdir(parents=True, exist_ok=True)
 
-        subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
+            script_path = script_dir / f"{name}-array-submit-{now}.sh"
+            with script_path.open("w") as f:
+                f.write(submission_script)
+
+            _sbatch = [sbatch] if isinstance(sbatch, str) else sbatch
+            subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
+        else:
+            # Split into multiple array submissions
+            for start_idx in range(0, total_items - 1, job_array_limit):
+                end_idx = min(start_idx + job_array_limit, total_items - 1)
+                chunk_size = end_idx - start_idx + 1
+
+                chunk_name = f"{name}-chunk-{start_idx}-{end_idx}"
+                chunk_limit_spec = ""
+                if limit is not None:
+                    chunk_limit = min(limit, chunk_size)
+                    chunk_limit_spec = f"%{chunk_limit}"
+                
+                chunk_headers = dict(slurm_headers)
+                chunk_headers["array"] = f"{start_idx}-{end_idx}{chunk_limit_spec}"
+                
+                submission_script = self.submission_script(
+                    chunk_name,
+                    chunk_headers,
+                    python=python,
+                    generate_item_scripts=True,
+                    limit=None, # --array is already set
+                )
+                
+                script_path = script_dir / f"{chunk_name}-array-submit-{now}.sh"
+                with script_path.open("w") as f:
+                    f.write(submission_script)
+                
+                print(f"Submitting chunk {start_idx}-{end_idx} of {total_items-1}")
+                subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
 
     def status(
         self,

@@ -583,6 +583,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
             type=str,
         )
         p.add_argument("--overwrite-all", action="store_true")
+        p.add_argument("--job-array-limit", type=int)                                   # by @artem
 
     with cmds("status") as p:
         p.add_argument("--expname", choices=EXP_CHOICES, type=str, required=True)
@@ -596,7 +597,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
         p.add_argument("--out", type=Path, required=True)
         p.add_argument("--no-config", action="store_true")
         p.add_argument("--skip-failed", action="store_true", 
-                   help="Skip failed experiments without history.parquet file")
+                   help="Skip failed experiments without history.parquet file")         # by @artem
 
     with cmds("plot-stacked") as p:
         p.add_argument("--outpath", type=Path, default=Path("./plots"))
@@ -941,6 +942,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
             print(f"Collecting {len(array)} histories.")
             # _df = pd.concat([exp.history(columns=columns_to_load) for exp in array])
 
+            # Logic to skip failed experiments by @artem
             histories = []
             for exp in array:
                 try:
@@ -1010,6 +1012,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
                         script_dir=result_dir / "slurm-scripts",
                         sbatch=["sbatch"],
                         limit=1,
+                        job_array_limit=args.job_array_limit, # by @artem
                     )
                 case "run":
                     for exp in to_submit:

@@ -27,7 +27,7 @@ experiments=(
 
 for exp in "${experiments[@]}"; do
   echo "Submitting experiment: $exp"
-  python e1.py submit --expname "$exp" --overwrite-by success pending failed running
+  python e1.py submit --expname "$exp" --overwrite-all --job-array-limit 1000
   
   sleep 1
 done
