@@ -397,18 +397,15 @@ class ArraySlurmable(Sequence[T]):
         python: Path | str | None = None,
         generate_item_scripts: bool = False,
         limit: int | None = None,
+        start_idx: int | None = None,
+        end_idx: int | None = None,
     ) -> str:
         headers = dict(slurm_headers)
-        if limit is not None:
-            assert "array" not in slurm_headers
-            lim = min(limit, len(self.items))
-            headers["array"] = f"0-{len(self.items) - 1}%{lim}"
 
         assert "job-name" not in slurm_headers
         jobname = f"{name}-array"
         headers["job-name"] = jobname
 
-        header_str = as_slurm_header(headers)
         headers_without_array = {k: v for k, v in headers.items() if k != "array"}
         now = datetime.now().isoformat()
 
@@ -428,6 +425,23 @@ class ArraySlurmable(Sequence[T]):
                     f.write(exc_script)
 
             paths.append(exec_script_path)
+
+        if limit is not None:
+            assert "array" not in slurm_headers
+            lim = min(limit, len(self.items))
+            
+            if start_idx is not None and end_idx is not None:
+                chunk_size = end_idx - start_idx + 1
+                chunk_limit = min(limit, chunk_size)
+                chunk_limit_spec = f"%{chunk_limit}"
+                
+                headers["array"] = f"0-{chunk_size-1}{chunk_limit_spec}"
+                
+                paths = paths[start_idx:end_idx + 1]
+            else:
+                headers["array"] = f"0-{len(self.items) - 1}%{lim}"
+        
+        header_str = as_slurm_header(headers) 
 
         _items_str = "\n  ".join([f'"{p}"' for p in paths])
         items_arr = f"script_paths=(\n  {_items_str}\n)"
@@ -500,25 +514,19 @@ class ArraySlurmable(Sequence[T]):
             subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
         else:
             # Split into multiple array submissions
-            for start_idx in range(0, total_items - 1, job_array_limit):
-                end_idx = min(start_idx + job_array_limit, total_items - 1)
-                chunk_size = end_idx - start_idx + 1
-
-                chunk_name = f"{name}-chunk-{start_idx}-{end_idx}"
-                chunk_limit_spec = ""
-                if limit is not None:
-                    chunk_limit = min(limit, chunk_size)
-                    chunk_limit_spec = f"%{chunk_limit}"
+            for start_idx in range(0, total_items, job_array_limit):
+                end_idx = min(start_idx + job_array_limit - 1, total_items - 1)
                 
-                chunk_headers = dict(slurm_headers)
-                chunk_headers["array"] = f"{start_idx}-{end_idx}{chunk_limit_spec}"
+                chunk_name = f"{name}-chunk-{start_idx}-{end_idx}"
                 
                 submission_script = self.submission_script(
                     chunk_name,
-                    chunk_headers,
+                    slurm_headers,
                     python=python,
                     generate_item_scripts=True,
-                    limit=None, # --array is already set
+                    limit=limit,
+                    start_idx=start_idx,
+                    end_idx=end_idx,
                 )
                 
                 script_path = script_dir / f"{chunk_name}-array-submit-{now}.sh"

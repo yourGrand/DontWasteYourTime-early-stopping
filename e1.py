@@ -583,7 +583,9 @@ def main():  # noqa: C901, PLR0915, PLR0912
             type=str,
         )
         p.add_argument("--overwrite-all", action="store_true")
-        p.add_argument("--job-array-limit", type=int)                                   # by @artem
+        p.add_argument("--job-array-limit", type=int)
+        p.add_argument("--mail-type", type=str)
+        p.add_argument("--mail-user", type=str)
 
     with cmds("status") as p:
         p.add_argument("--expname", choices=EXP_CHOICES, type=str, required=True)
@@ -597,7 +599,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
         p.add_argument("--out", type=Path, required=True)
         p.add_argument("--no-config", action="store_true")
         p.add_argument("--skip-failed", action="store_true", 
-                   help="Skip failed experiments without history.parquet file")         # by @artem
+                   help="Skip failed experiments without history.parquet file")         
 
     with cmds("plot-stacked") as p:
         p.add_argument("--outpath", type=Path, default=Path("./plots"))
@@ -978,15 +980,20 @@ def main():  # noqa: C901, PLR0915, PLR0912
             for status, exps in exps_by_status.items():
                 print(f"{status}: {len(exps)}")
 
-            to_submit = list(
-                chain.from_iterable(exps_by_status[s] for s in args.overwrite_by),
-            )
+            if args.overwrite_all:
+                to_submit = list(
+                    chain.from_iterable(exps_by_status[s] for s in ["failed", "running", "pending", "success", "submitted"]),
+                )
+            else:
+                to_submit = list(
+                    chain.from_iterable(exps_by_status[s] for s in args.overwrite_by),
+                )
             if not any(to_submit):
                 print(f"Nothing to run from {len(experiments)} experiments.")
                 sys.exit(0)
 
             if args.dry:
-                print(f"Would reset: {args.overwrite_by}")
+                print(f"Would reset: {args.overwrite_by if not args.overwrite_all else 'all'}")
                 sys.exit(0)
 
             for exp in to_submit:
@@ -996,6 +1003,22 @@ def main():  # noqa: C901, PLR0915, PLR0912
                 case "submit":
                     array = E1.as_array(to_submit)
                     first = array[0]
+                    
+                    slurm_headers = {
+                        "mem": f"{first.memory_gb}G",
+                        "time": seconds_to_slurm_time(
+                            int(5 * 60 + first.time_seconds * 1.5),
+                        ),
+                        "cpus-per-task": first.n_cpus,
+                        "output": str(log_dir / "%j-%a.out"),
+                        "error": str(log_dir / "%j-%a.err"),
+                    }
+                    
+                    if args.mail_type:
+                        slurm_headers["mail-type"] = args.mail_type
+                    if args.mail_user:
+                        slurm_headers["mail-user"] = args.mail_user
+            
                     array.submit(
                         name=args.expname,
                         slurm_headers={
@@ -1012,7 +1035,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
                         script_dir=result_dir / "slurm-scripts",
                         sbatch=["sbatch"],
                         limit=1,
-                        job_array_limit=args.job_array_limit, # by @artem
+                        job_array_limit=args.job_array_limit, 
                     )
                 case "run":
                     for exp in to_submit:
