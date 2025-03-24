@@ -331,7 +331,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     pipeline=pipeline,
                     n_cpus=n_cpu,
                     optimizer=optimizer,
-                    memory_gb=mem_per_cpu_gb * n_cpu,
+                    memory_gb=mem_per_cpu_gb, #* n_cpu,
                     time_seconds=time_seconds,
                     experiment_seed=experiment_fixed_seed,
                     minimum_trials=1,  # Takes no effect...
@@ -388,7 +388,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     pipeline=pipeline,
                     n_cpus=n_cpu,
                     optimizer=optimizer,
-                    memory_gb=mem_per_cpu_gb * n_cpu,
+                    memory_gb=mem_per_cpu_gb, #* n_cpu,
                     time_seconds=time_seconds,
                     experiment_seed=experiment_fixed_seed,
                     minimum_trials=1,  # Takes no effect...
@@ -441,7 +441,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     pipeline=pipeline,
                     n_cpus=n_cpu,
                     optimizer=optimizer,
-                    memory_gb=mem_per_cpu_gb * n_cpu,
+                    memory_gb=mem_per_cpu_gb, #* n_cpu,
                     time_seconds=time_seconds,
                     experiment_seed=experiment_fixed_seed,
                     minimum_trials=1,  # Takes no effect...
@@ -498,7 +498,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     pipeline=pipeline,
                     n_cpus=n_cpu,
                     optimizer=optimizer,
-                    memory_gb=mem_per_cpu_gb * n_cpu,
+                    memory_gb=mem_per_cpu_gb, #* n_cpu,
                     time_seconds=time_seconds,
                     experiment_seed=experiment_fixed_seed,
                     minimum_trials=1,  # Takes no effect...
@@ -537,7 +537,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
             pipeline=pipeline,
             n_cpus=n_cpu,
             optimizer=optimizer,
-            memory_gb=mem_per_cpu_gb * n_cpu,
+            memory_gb=mem_per_cpu_gb, #* n_cpu,
             time_seconds=time_seconds,
             experiment_seed=experiment_fixed_seed,
             minimum_trials=1,  # Takes no effect...
@@ -1005,6 +1005,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
                     first = array[0]
                     
                     slurm_headers = {
+                        # "partition": "ANON REPLACE ME",
                         "mem": f"{first.memory_gb}G",
                         "time": seconds_to_slurm_time(
                             int(5 * 60 + first.time_seconds * 1.5),
@@ -1021,20 +1022,11 @@ def main():  # noqa: C901, PLR0915, PLR0912
             
                     array.submit(
                         name=args.expname,
-                        slurm_headers={
-                            # "partition": "ANON REPLACE ME",
-                            "mem": f"{first.memory_gb}G",
-                            "time": seconds_to_slurm_time(
-                                int(5 * 60 + first.time_seconds * 1.5),
-                            ),
-                            "cpus-per-task": first.n_cpus,
-                            "output": str(log_dir / "%j-%a.out"),
-                            "error": str(log_dir / "%j-%a.err"),
-                        },
+                        slurm_headers=slurm_headers,
                         python=None,  # Set explicitly if required.
                         script_dir=result_dir / "slurm-scripts",
                         sbatch=["sbatch"],
-                        limit=1,
+                        limit=None,
                         job_array_limit=args.job_array_limit, 
                     )
                 case "run":
