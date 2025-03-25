@@ -5,6 +5,7 @@ from collections import defaultdict
 from itertools import chain, product
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeAlias
+from datetime import datetime
 
 import pandas as pd
 from rich import print
@@ -590,7 +591,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
     with cmds("status") as p:
         p.add_argument("--expname", choices=EXP_CHOICES, type=str, required=True)
         p.add_argument("--count", type=str, nargs="+", default=None)
-        p.add_argument("--out", type=Path, default=None)
+        p.add_argument("--out-dir", type=Path, required=True)
 
     with cmds("collect") as p:
         p.add_argument("--expname", choices=EXP_CHOICES, type=str, required=True)
@@ -899,6 +900,8 @@ def main():  # noqa: C901, PLR0915, PLR0912
 
     match args.command:
         case "status":
+            now = datetime.now().isoformat()
+            
             pd.set_option("display.max_colwidth", None)
             pd.set_option("display.max_rows", None)
             pd.set_option("display.max_columns", None)
@@ -907,9 +910,15 @@ def main():  # noqa: C901, PLR0915, PLR0912
                 exclude=["root", "openml_cache_directory"],
                 count=args.count,
             )
-            print(status)
-            if args.out:
-                shrink_dataframe(status).to_parquet(args.out)
+            
+            parent_dir = args.out_dir
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            
+            out_path = parent_dir / f"status-{args.expname}_{now}.csv"
+            
+            status.to_csv(out_path)
+            print(f"Status saved to: {out_path}")
+                    
         case "collect":
             array = E1.as_array(experiments)
             if args.fail_early:
@@ -1007,9 +1016,9 @@ def main():  # noqa: C901, PLR0915, PLR0912
                     slurm_headers = {
                         # "partition": "ANON REPLACE ME",
                         "mem": f"{first.memory_gb}G",
-                        "time": seconds_to_slurm_time(
-                            int(5 * 60 + first.time_seconds * 1.5),
-                        ),
+                        # "time": seconds_to_slurm_time(
+                        #     int(5 * 60 + first.time_seconds * 1.5),
+                        # ),
                         "cpus-per-task": first.n_cpus,
                         "output": str(log_dir / "%j-%a.out"),
                         "error": str(log_dir / "%j-%a.err"),

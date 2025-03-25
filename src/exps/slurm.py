@@ -519,13 +519,7 @@ class ArraySlurmable(Sequence[T]):
         limit: int | None = None,
         job_array_limit: int | None = 1080,
     ) -> None:
-        """
-        Submit jobs to SLURM, splitting into chunks if needed.
         
-        For multi-chunk submissions, each chunk after the first will wait for a specific 
-        number of jobs from the previous chunk to complete before starting. The wait count
-        equals the size of the current chunk (or the previous chunk size if smaller).
-        """
         total_items = len(self.items)
         now = datetime.now().isoformat()
         
@@ -537,13 +531,8 @@ class ArraySlurmable(Sequence[T]):
         
         # Complex case: split into chunks with dependencies
         if job_array_limit is not None and total_items > job_array_limit:
-            prev_job_id = None
-            num_chunks = (total_items + job_array_limit - 1) // job_array_limit
-            
-            for chunk_idx in range(num_chunks):
-                start_idx = chunk_idx * job_array_limit
+            for start_idx in range(0, total_items, job_array_limit):
                 end_idx = min(start_idx + job_array_limit - 1, total_items - 1)
-                chunk_size = end_idx - start_idx + 1
                 chunk_name = f"{name}-chunk-{start_idx}-{end_idx}"
                 
                 submission_script = self.submission_script(
@@ -560,35 +549,18 @@ class ArraySlurmable(Sequence[T]):
                 with script_path.open("w") as f:
                     f.write(submission_script)
                 
-                # Add dependency if not the first chunk            
-                cmd = list(_sbatch)
+                print(f"Submitting chunk {start_idx}-{end_idx} of {total_items-1}")
                 
-                if prev_job_id is not None:
-                    wait_count = min(chunk_size, job_array_limit)
-                    cmd.extend(["--dependency", f"afterany:{prev_job_id}?{wait_count}"])
-                
-                cmd.append(str(script_path))
-                
-                # Submit chunk and extract job ID from the output
                 try:
-                    print(f"Command: \n{cmd}\n")
-                    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                    
-                    output = result.stdout
-                    # output = "DUMMY JOB ID:\nSubmitted batch job 5845357\n"
-                                    
-                    job_id_match = re.search(r"Submitted batch job (\d+)", output)
-                    if job_id_match:
-                        prev_job_id = job_id_match.group(1)
-                    else:
-                        print(f"Warning: Could not extract job ID from submission output")
+                    subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
                 except Exception as e:
-                    print(
-                        "Debugging off SLURM cluster. Error:" +
-                        "\n-----------------------------\n" +
-                        f"{e}" +
-                        "\n-----------------------------\n"
-                        )
+                    # print(
+                    #     "Debugging off SLURM cluster. Error:" +
+                    #     "\n-----------------------------\n" +
+                    #     f"{e}" +
+                    #     "\n-----------------------------\n"
+                    #     )
+                    raise e
 
         # Simple case: submit as a single job array
         else:

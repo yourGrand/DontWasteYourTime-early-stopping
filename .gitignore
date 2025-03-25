@@ -1,7 +1,7 @@
 results-*
 plots-*
 archive-*
-build
+status-*
 __pycache__
 .mypy_cache
 *.egg-info
