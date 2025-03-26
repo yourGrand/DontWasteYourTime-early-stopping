@@ -585,6 +585,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
         )
         p.add_argument("--overwrite-all", action="store_true")
         p.add_argument("--job-array-limit", type=int)
+        p.add_argument("--chunk-start-idx", type=int)
         p.add_argument("--mail-type", type=str)
         p.add_argument("--mail-user", type=str)
 
@@ -975,7 +976,6 @@ def main():  # noqa: C901, PLR0915, PLR0912
                 f"Size after shrinking: {round(_df.memory_usage().sum() / 1e6, 2)} MB",
             )
             print(f"Writing parquet to {args.out}")
-            # _df.to_parquet(args.out)
 
             parent_dir = args.out.parent
             parent_dir.mkdir(parents=True)
@@ -1036,7 +1036,8 @@ def main():  # noqa: C901, PLR0915, PLR0912
                         script_dir=result_dir / "slurm-scripts",
                         sbatch=["sbatch"],
                         limit=None,
-                        job_array_limit=args.job_array_limit, 
+                        job_array_limit=args.job_array_limit,
+                        chunk_start_idx=args.chunk_start_idx,
                     )
                 case "run":
                     for exp in to_submit:

@@ -1,5 +1,5 @@
-results-*
-plots-*
+results-*/
+plots-*/
 archive-*
 status-*
 __pycache__

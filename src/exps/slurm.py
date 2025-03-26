@@ -410,48 +410,40 @@ class ArraySlurmable(Sequence[T]):
         headers_without_array = {k: v for k, v in headers.items() if k != "array"}
         now = datetime.now().isoformat()
 
-        paths = []
         # Write the exec scripts to each item
-        for item in self.items:
-            exc_script = item.exec_script(
-                python=python,
-                slurm_headers=headers_without_array,
-            )
+        paths = []
+        if start_idx is not None and end_idx is not None:
+            for item in self.items[start_idx:end_idx + 1]:
+                exc_script = item.exec_script(
+                    python=python,
+                    slurm_headers=headers_without_array,
+                )
 
-            exec_script_path = item.unique_path / f"{name}-array-submit-{now}.sh"
+                exec_script_path = item.unique_path / f"{name}-array-submit-{now}.sh"
 
-            if generate_item_scripts:
-                exec_script_path.parent.mkdir(parents=True, exist_ok=True)
-                with exec_script_path.open("w") as f:
-                    f.write(exc_script)
+                if generate_item_scripts:
+                    exec_script_path.parent.mkdir(parents=True, exist_ok=True)
+                    with exec_script_path.open("w") as f:
+                        f.write(exc_script)
 
-            paths.append(exec_script_path)
+                paths.append(exec_script_path)
+        else:
+            for item in self.items:
+                exc_script = item.exec_script(
+                    python=python,
+                    slurm_headers=headers_without_array,
+                )
+
+                exec_script_path = item.unique_path / f"{name}-array-submit-{now}.sh"
+
+                if generate_item_scripts:
+                    exec_script_path.parent.mkdir(parents=True, exist_ok=True)
+                    with exec_script_path.open("w") as f:
+                        f.write(exc_script)
+
+                paths.append(exec_script_path)
 
         assert "array" not in slurm_headers
-        
-        # headers["array"] = f"0-{len(self.items) - 1}"
-        
-        # if limit is not None:
-        #     # assert "array" not in slurm_headers
-        #     lim = min(limit, len(self.items))
-        #     headers["array"] = f"0-{len(self.items) - 1}%{lim}"
-            
-        # if start_idx is not None and end_idx is not None:
-        #     chunk_size = end_idx - start_idx + 1
-            
-        #     if limit is not None:
-        #         chunk_limit = min(limit, chunk_size)
-        #         chunk_limit_spec = f"%{chunk_limit}"
-                
-        #         headers["array"] = f"0-{chunk_size-1}{chunk_limit_spec}"
-        #     else:
-        #         headers["array"] = f"0-{chunk_size-1}"
-            
-        #     paths = paths[start_idx:end_idx + 1]
-            
-        #     # else:
-        #         # headers["array"] = f"0-{len(self.items) - 1}%{lim}"
-        
         array_config = {}
         
         # Range
@@ -518,6 +510,7 @@ class ArraySlurmable(Sequence[T]):
         python: Path | str | None = None,
         limit: int | None = None,
         job_array_limit: int | None = 1080,
+        chunk_start_idx: int | None = 0,
     ) -> None:
         
         total_items = len(self.items)
@@ -531,35 +524,48 @@ class ArraySlurmable(Sequence[T]):
         
         # Complex case: split into chunks with dependencies
         if job_array_limit is not None and total_items > job_array_limit:
-            for start_idx in range(0, total_items, job_array_limit):
-                end_idx = min(start_idx + job_array_limit - 1, total_items - 1)
-                chunk_name = f"{name}-chunk-{start_idx}-{end_idx}"
+            # TODO: Implement proper chunking with some sort of 
+            #       'for start_idx in range(0, total_items, job_array_limit):' logic
+
+            start_idx = chunk_start_idx if chunk_start_idx is not None else 0
+            end_idx = min(start_idx + job_array_limit - 1, total_items - 1)
+            chunk_name = f"{name}-chunk-{start_idx}-{end_idx}"
+            
+            submission_script = self.submission_script(
+                chunk_name,
+                slurm_headers,
+                python=python,
+                generate_item_scripts=True,
+                limit=limit,
+                start_idx=start_idx,
+                end_idx=end_idx,
+            )
+            
+            script_path = script_dir / f"{chunk_name}-array-submit-{now}.sh"
+            with script_path.open("w") as f:
+                f.write(submission_script)
+            
+            try:
+                subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
                 
-                submission_script = self.submission_script(
-                    chunk_name,
-                    slurm_headers,
-                    python=python,
-                    generate_item_scripts=True,
-                    limit=limit,
-                    start_idx=start_idx,
-                    end_idx=end_idx,
+                for item in self.items[start_idx:end_idx + 1]:
+                    item.flag("submitted").touch()
+                    
+                print(
+                    f"\nDue to the job array of the experiment \"{name}\" ({total_items}) exceeding job array limit ({job_array_limit}):"
+                    f"\nSubmitted chunk {start_idx}-{end_idx} of {total_items-1}\n"
+                    f"\nTo submit the next chunk, run the following command when {total_items - (end_idx + 1)} jobs terminate (succed or fail):\n"
+                    f"\n    python e1.py submit --expname {name} --job-array-limit {job_array_limit} --chunk-start-idx {end_idx + 1}\n"
                 )
-                
-                script_path = script_dir / f"{chunk_name}-array-submit-{now}.sh"
-                with script_path.open("w") as f:
-                    f.write(submission_script)
-                
-                print(f"Submitting chunk {start_idx}-{end_idx} of {total_items-1}")
-                
-                try:
-                    subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
-                except Exception as e:
-                    # print(
-                    #     "Debugging off SLURM cluster. Error:" +
-                    #     "\n-----------------------------\n" +
-                    #     f"{e}" +
-                    #     "\n-----------------------------\n"
-                    #     )
+            except Exception as e:
+                if e is subprocess.FileNotFoundError:
+                    print(
+                        "\n-----------------------------\n"
+                        "Debugging off SLURM cluster. Error:"
+                        f"{e}"
+                        "\n-----------------------------\n"
+                    )
+                else:
                     raise e
 
         # Simple case: submit as a single job array
@@ -576,75 +582,13 @@ class ArraySlurmable(Sequence[T]):
             with script_path.open("w") as f:
                 f.write(submission_script)
                 
-            print(f"Submitting all {total_items} jobs as a single array")
             subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
-    
-    # def submit(
-    #     self,
-    #     name: str,
-    #     slurm_headers: dict[str, Any],
-    #     *,
-    #     sbatch: str | list[str] = "sbatch",
-    #     script_dir: Path | None = None,
-    #     python: Path | str | None = None,
-    #     limit: int | None = None,
-    #     job_array_limit: int | None = 1080,
-    # ) -> None:
-        
-    #     total_items = len(self.items)
-    #     now = datetime.now().isoformat()
-        
-    #     script_dir = script_dir or Path()
-    #     script_dir = script_dir.absolute().resolve()
-    #     script_dir.mkdir(parents=True, exist_ok=True)
-        
-    #     _sbatch = [sbatch] if isinstance(sbatch, str) else sbatch
-    #     if job_array_limit == None or total_items <= job_array_limit:
-    #         now = datetime.now().isoformat()
-    #         submission_script = self.submission_script(
-    #             name,
-    #             slurm_headers,
-    #             python=python,
-    #             generate_item_scripts=True,
-    #             limit=limit,
-    #         )
-    #         script_dir = script_dir or Path()
-    #         script_dir = script_dir.absolute().resolve()
-    #         script_dir.mkdir(parents=True, exist_ok=True)
-
-    #         script_path = script_dir / f"{name}-array-submit-{now}.sh"
-    #         with script_path.open("w") as f:
-    #             f.write(submission_script)
-
-    #         _sbatch = [sbatch] if isinstance(sbatch, str) else sbatch
-    #         subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
-    #     else:
-    #         # Split into chunks
-    #         for start_idx in range(0, total_items, job_array_limit):
-    #             end_idx = min(start_idx + job_array_limit - 1, total_items - 1)
-    #             chunk_name = f"{name}-chunk-{start_idx}-{end_idx}"
-                
-    #             submission_script = self.submission_script(
-    #                 chunk_name,
-    #                 slurm_headers,
-    #                 python=python,
-    #                 generate_item_scripts=True,
-    #                 limit=limit,
-    #                 start_idx=start_idx,
-    #                 end_idx=end_idx,
-    #             )
-                
-    #             script_path = script_dir / f"{chunk_name}-array-submit-{now}.sh"
-    #             with script_path.open("w") as f:
-    #                 f.write(submission_script)
-                
-    #             print(f"Submitting chunk {start_idx}-{end_idx} of {total_items-1}")
-                
-    #             # TEMP
-    #             try:
-    #                 subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
-    #             except Exception as e:
-    #                 print(f"Debugging off SLURM cluster: \n-----------------------------\n{e}\n-----------------------------\n")
+            
+            for item in self.items:
+                item.flag("submitted").touch()
+            
+            if chunk_start_idx: 
+                print("\nAll chunks submitted\n")
 
     def status(
         self,
