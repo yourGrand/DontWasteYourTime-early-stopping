@@ -332,7 +332,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     pipeline=pipeline,
                     n_cpus=n_cpu,
                     optimizer=optimizer,
-                    memory_gb=mem_per_cpu_gb, #* n_cpu,
+                    memory_gb=mem_per_cpu_gb * n_cpu,
                     time_seconds=time_seconds,
                     experiment_seed=experiment_fixed_seed,
                     minimum_trials=1,  # Takes no effect...
@@ -389,7 +389,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     pipeline=pipeline,
                     n_cpus=n_cpu,
                     optimizer=optimizer,
-                    memory_gb=mem_per_cpu_gb, #* n_cpu,
+                    memory_gb=mem_per_cpu_gb * n_cpu,
                     time_seconds=time_seconds,
                     experiment_seed=experiment_fixed_seed,
                     minimum_trials=1,  # Takes no effect...
@@ -442,7 +442,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     pipeline=pipeline,
                     n_cpus=n_cpu,
                     optimizer=optimizer,
-                    memory_gb=mem_per_cpu_gb, #* n_cpu,
+                    memory_gb=mem_per_cpu_gb * n_cpu,
                     time_seconds=time_seconds,
                     experiment_seed=experiment_fixed_seed,
                     minimum_trials=1,  # Takes no effect...
@@ -499,7 +499,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     pipeline=pipeline,
                     n_cpus=n_cpu,
                     optimizer=optimizer,
-                    memory_gb=mem_per_cpu_gb, #* n_cpu,
+                    memory_gb=mem_per_cpu_gb * n_cpu,
                     time_seconds=time_seconds,
                     experiment_seed=experiment_fixed_seed,
                     minimum_trials=1,  # Takes no effect...
@@ -538,7 +538,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
             pipeline=pipeline,
             n_cpus=n_cpu,
             optimizer=optimizer,
-            memory_gb=mem_per_cpu_gb, #* n_cpu,
+            memory_gb=mem_per_cpu_gb * n_cpu,
             time_seconds=time_seconds,
             experiment_seed=experiment_fixed_seed,
             minimum_trials=1,  # Takes no effect...
