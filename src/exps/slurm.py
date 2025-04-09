@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import re
+import sys
+import shutil
 import argparse
 import inspect
 import subprocess
@@ -25,13 +29,14 @@ except ImportError:
 def _try_interpret_python_path() -> Path:
     import os
 
-    if (path := os.environ.get("PYTHON_PATH")) is not None or (
+    # Prefer virtual environment 
+    if (path := os.environ.get("VIRTUAL_ENV")) is not None:
+        path = Path(path).resolve().expanduser()
+        path = path / "bin" / "python"
+    elif (path := os.environ.get("PYTHON_PATH")) is not None or (
         path := os.environ.get("CONDA_PYTHON_EXE")
     ) is not None:
         path = Path(path).resolve().expanduser()
-    elif (path := os.environ.get("VIRTUAL_ENV")) is not None:
-        path = Path(path).resolve().expanduser()
-        path = path / "bin" / "python"
     else:
         raise ValueError(
             "Could not find a Python path, please provide explicitly",
@@ -43,6 +48,50 @@ def _try_interpret_python_path() -> Path:
             " Please provide an explicit python path",
         )
     return path
+
+
+def _try_interpret_python_path_v2() -> Path:
+
+    # First priority: use the current Python interpreter (most reliable)
+    path = Path(sys.executable).resolve()
+    if path.exists():
+        return path
+
+    # Second priority: check environment variables
+    if (path := os.environ.get("PYTHON_PATH")) is not None:
+        path = Path(path).resolve().expanduser()
+        if path.exists():
+            return path
+    
+    # Third priority: check conda-specific environment variables
+    if (path := os.environ.get("CONDA_PYTHON_EXE")) is not None:
+        path = Path(path).resolve().expanduser()
+        if path.exists():
+            return path
+    
+    if (conda_prefix := os.environ.get("CONDA_PREFIX")) is not None:
+        path = Path(conda_prefix) / "bin" / "python"
+        if path.exists():
+            return path
+    
+    # Fourth priority: check virtual env variables
+    if (path := os.environ.get("VIRTUAL_ENV")) is not None:
+        path = Path(path).resolve().expanduser() / "bin" / "python"
+        if path.exists():
+            return path
+    
+    # Use which command
+    try:
+        path_str = subprocess.check_output(["which", "python"], text=True).strip()
+        path = Path(path_str).resolve()
+        if path.exists():
+            return path
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+
+    raise ValueError(
+        "Could not find a Python path, please provide explicitly",
+    )
 
 
 def as_slurm_header(headers: dict[str, Any]) -> str:
@@ -105,7 +154,7 @@ class Slurmable(Parsable):
 
         field_values = self.item_fields()
         if python is None:
-            python = _try_interpret_python_path()
+            python = _try_interpret_python_path_v2()
 
         running_flag = self.flag("running").resolve().absolute()
         failed_flag = self.flag("failed").resolve().absolute()
@@ -146,6 +195,11 @@ class Slurmable(Parsable):
             f.write(exec_script)
 
         print(exec_script)
+
+        bash_path = shutil.which("bash")
+        if bash_path is None:
+            raise ValueError("Cannot find 'bash' executable in PATH")
+        bash = Path(bash_path)
 
         subprocess.run([str(bash), str(exec_script_path)], check=True)  # noqa: S603
 
@@ -344,37 +398,77 @@ class ArraySlurmable(Sequence[T]):
         python: Path | str | None = None,
         generate_item_scripts: bool = False,
         limit: int | None = None,
+        start_idx: int | None = None,
+        end_idx: int | None = None,
     ) -> str:
         headers = dict(slurm_headers)
-        if limit is not None:
-            assert "array" not in slurm_headers
-            lim = min(limit, len(self.items))
-            headers["array"] = f"0-{len(self.items) - 1}%{lim}"
 
         assert "job-name" not in slurm_headers
         jobname = f"{name}-array"
         headers["job-name"] = jobname
 
-        header_str = as_slurm_header(headers)
         headers_without_array = {k: v for k, v in headers.items() if k != "array"}
         now = datetime.now().isoformat()
 
-        paths = []
         # Write the exec scripts to each item
-        for item in self.items:
-            exc_script = item.exec_script(
-                python=python,
-                slurm_headers=headers_without_array,
-            )
+        paths = []
+        if start_idx is not None and end_idx is not None:
+            for item in self.items[start_idx:end_idx + 1]:
+                exc_script = item.exec_script(
+                    python=python,
+                    slurm_headers=headers_without_array,
+                )
 
-            exec_script_path = item.unique_path / f"{name}-array-submit-{now}.sh"
+                exec_script_path = item.unique_path / f"{name}-array-submit-{now}.sh"
 
-            if generate_item_scripts:
-                exec_script_path.parent.mkdir(parents=True, exist_ok=True)
-                with exec_script_path.open("w") as f:
-                    f.write(exc_script)
+                if generate_item_scripts:
+                    exec_script_path.parent.mkdir(parents=True, exist_ok=True)
+                    with exec_script_path.open("w") as f:
+                        f.write(exc_script)
 
-            paths.append(exec_script_path)
+                paths.append(exec_script_path)
+        else:
+            for item in self.items:
+                exc_script = item.exec_script(
+                    python=python,
+                    slurm_headers=headers_without_array,
+                )
+
+                exec_script_path = item.unique_path / f"{name}-array-submit-{now}.sh"
+
+                if generate_item_scripts:
+                    exec_script_path.parent.mkdir(parents=True, exist_ok=True)
+                    with exec_script_path.open("w") as f:
+                        f.write(exc_script)
+
+                paths.append(exec_script_path)
+
+        assert "array" not in slurm_headers
+        array_config = {}
+        
+        # Range
+        if start_idx is not None and end_idx is not None:
+            chunk_size = end_idx - start_idx + 1
+            array_config["range"] = f"0-{chunk_size-1}"
+            paths = paths[start_idx:end_idx + 1]
+        else:
+            array_config["range"] = f"0-{len(self.items) - 1}"
+        
+        # Limit
+        if limit is not None:
+            if start_idx is not None and end_idx is not None:
+                max_concurrent = min(limit, end_idx - start_idx + 1)
+            else:
+                max_concurrent = min(limit, len(self.items))
+                
+            array_config["limit"] = max_concurrent
+        
+        if "limit" in array_config:
+            headers["array"] = f"{array_config['range']}%{array_config['limit']}"
+        else:
+            headers["array"] = array_config["range"]
+        
+        header_str = as_slurm_header(headers) 
 
         _items_str = "\n  ".join([f'"{p}"' for p in paths])
         items_arr = f"script_paths=(\n  {_items_str}\n)"
@@ -415,26 +509,86 @@ class ArraySlurmable(Sequence[T]):
         script_dir: Path | None = None,
         python: Path | str | None = None,
         limit: int | None = None,
+        job_array_limit: int | None = 1080,
+        chunk_start_idx: int | None = 0,
     ) -> None:
+        
+        total_items = len(self.items)
         now = datetime.now().isoformat()
-        submission_script = self.submission_script(
-            name,
-            slurm_headers,
-            python=python,
-            generate_item_scripts=True,
-            limit=limit,
-        )
+        
         script_dir = script_dir or Path()
         script_dir = script_dir.absolute().resolve()
         script_dir.mkdir(parents=True, exist_ok=True)
-
-        script_path = script_dir / f"{name}-array-submit-{now}.sh"
-        with script_path.open("w") as f:
-            f.write(submission_script)
-
+        
         _sbatch = [sbatch] if isinstance(sbatch, str) else sbatch
+        
+        # Complex case: split into chunks with dependencies
+        if job_array_limit is not None and total_items > job_array_limit:
+            # TODO: Implement proper chunking with some sort of 
+            #       'for start_idx in range(0, total_items, job_array_limit):' logic
 
-        subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
+            start_idx = chunk_start_idx if chunk_start_idx is not None else 0
+            end_idx = min(start_idx + job_array_limit - 1, total_items - 1)
+            chunk_name = f"{name}-chunk-{start_idx}-{end_idx}"
+            
+            submission_script = self.submission_script(
+                chunk_name,
+                slurm_headers,
+                python=python,
+                generate_item_scripts=True,
+                limit=limit,
+                start_idx=start_idx,
+                end_idx=end_idx,
+            )
+            
+            script_path = script_dir / f"{chunk_name}-array-submit-{now}.sh"
+            with script_path.open("w") as f:
+                f.write(submission_script)
+            
+            try:
+                subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
+                
+                for item in self.items[start_idx:end_idx + 1]:
+                    item.flag("submitted").touch()
+                    
+                print(
+                    f"\nDue to the job array of the experiment \"{name}\" ({total_items}) exceeding job array limit ({job_array_limit}):"
+                    f"\nSubmitted chunk {start_idx}-{end_idx} of {total_items-1}\n"
+                    f"\nTo submit the next chunk, run the following command when {total_items - (end_idx + 1)} jobs terminate (succed or fail):\n"
+                    f"\n    python e1.py submit --expname {name} --job-array-limit {job_array_limit} --chunk-start-idx {end_idx + 1}\n"
+                )
+            except Exception as e:
+                if e is subprocess.FileNotFoundError:
+                    print(
+                        "\n-----------------------------\n"
+                        "Debugging off SLURM cluster. Error:"
+                        f"{e}"
+                        "\n-----------------------------\n"
+                    )
+                else:
+                    raise e
+
+        # Simple case: submit as a single job array
+        else:
+            submission_script = self.submission_script(
+                name,
+                slurm_headers,
+                python=python,
+                generate_item_scripts=True,
+                limit=limit,
+            )
+            
+            script_path = script_dir / f"{name}-array-submit-{now}.sh"
+            with script_path.open("w") as f:
+                f.write(submission_script)
+                
+            subprocess.run([*_sbatch, str(script_path)], check=True)  # noqa: S603
+            
+            for item in self.items:
+                item.flag("submitted").touch()
+            
+            if chunk_start_idx: 
+                print("\nAll chunks submitted\n")
 
     def status(
         self,

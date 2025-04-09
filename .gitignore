@@ -1,4 +1,7 @@
-results-*
+results-*/
+plots-*/
+archive-*
+status-*
 __pycache__
 .mypy_cache
 *.egg-info
@@ -19,4 +22,6 @@ unknown-trial-bucket
 .ipynb_checkpoints
 .openml-cache
 *.parquet
+*.zip
+*.gzip
 vendored/**

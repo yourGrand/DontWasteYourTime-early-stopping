@@ -5,9 +5,13 @@ from collections import defaultdict
 from itertools import chain, product
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeAlias
+from datetime import datetime
 
 import pandas as pd
 from rich import print
+
+# Import bug fix
+sys.path.append(str(Path(__file__).parent / "src"))
 
 from exps.experiments.exp1 import E1, PIPELINES
 from exps.methods import METHODS
@@ -109,7 +113,7 @@ def cols_needed_for_plotting(
             for kind, split in product(("val", "test"), range(n_splits))
         ]
     else:
-        SPLIT_COLS = []
+        SPLIT_COLS = [] # type: ignore
     return CORE + METRIC_COLS + SPLIT_COLS
 
 
@@ -580,11 +584,15 @@ def main():  # noqa: C901, PLR0915, PLR0912
             type=str,
         )
         p.add_argument("--overwrite-all", action="store_true")
+        p.add_argument("--job-array-limit", type=int)
+        p.add_argument("--chunk-start-idx", type=int)
+        p.add_argument("--mail-type", type=str)
+        p.add_argument("--mail-user", type=str)
 
     with cmds("status") as p:
         p.add_argument("--expname", choices=EXP_CHOICES, type=str, required=True)
         p.add_argument("--count", type=str, nargs="+", default=None)
-        p.add_argument("--out", type=Path, default=None)
+        p.add_argument("--out-dir", type=Path, default=None)
 
     with cmds("collect") as p:
         p.add_argument("--expname", choices=EXP_CHOICES, type=str, required=True)
@@ -592,6 +600,8 @@ def main():  # noqa: C901, PLR0915, PLR0912
         p.add_argument("--ignore", nargs="+", type=str)
         p.add_argument("--out", type=Path, required=True)
         p.add_argument("--no-config", action="store_true")
+        p.add_argument("--skip-failed", action="store_true", 
+                   help="Skip failed experiments without history.parquet file")         
 
     with cmds("plot-stacked") as p:
         p.add_argument("--outpath", type=Path, default=Path("./plots"))
@@ -697,12 +707,12 @@ def main():  # noqa: C901, PLR0915, PLR0912
         }
 
         first = next(iter(_dfs.values()))
-        N_DATASETS = first["setting:task"].nunique()
+        n_datasets = first["setting:task"].nunique()
 
         # Quick sanity check...
         for key, _df in _dfs.items():
             model = "rf_classifier" if "RF" in key else "mlp_classifier"
-            assert _df["setting:task"].nunique() == N_DATASETS
+            assert _df["setting:task"].nunique() == n_datasets
             assert list(_df["setting:pipeline"].unique()) == [model]
 
         _dfs = {
@@ -710,7 +720,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
             for axis_title, _df in _dfs.items()
         }
 
-        title = f"Incumbent Traces, {N_DATASETS} Datasets"
+        title = f"Incumbent Traces, {n_datasets} Datasets"
         if args.merge_opt_into_method:
             for _, _df in _dfs.items():
                 _df.loc[:, "setting:opt-method"] = _df["setting:optimizer"].str.cat(
@@ -794,7 +804,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
         time_limit = args.time_limit
         cols = cols_needed_for_plotting(metric, args.n_splits)
         _df = pd.read_parquet(args.input, columns=cols)
-        N_DATASETS = _df["setting:task"].nunique()
+        n_datasets = _df["setting:task"].nunique()
 
         _df = _df[_df["setting:cv_early_stop_strategy"].isin(args.methods)]
 
@@ -813,7 +823,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
 
         match args.kind:
             case "incumbent-aggregated":
-                title = f"Normalized Cost of {method_title} with {args.n_splits} CV splits, {N_DATASETS} Datasets"  # noqa: E501
+                title = f"Normalized Cost of {method_title} with {args.n_splits} CV splits, {n_datasets} Datasets"  # noqa: E501
                 incumbent_traces_aggregated(
                     _df,
                     y=f"metric:{metric}",
@@ -834,7 +844,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
                     markevery=0.1,
                 )
             case "ranks-aggregated":
-                title = f"Rank Aggregation of {method_title} with {args.n_splits} CV splits, {N_DATASETS} Datasets"  # noqa: E501
+                title = f"Rank Aggregation of {method_title} with {args.n_splits} CV splits, {n_datasets} Datasets"  # noqa: E501
                 ranking_plots_aggregated(
                     _df,
                     y=f"metric:{metric}",
@@ -888,20 +898,36 @@ def main():  # noqa: C901, PLR0915, PLR0912
     script_dir.mkdir(exist_ok=True, parents=True)
     result_dir.mkdir(exist_ok=True, parents=True)
     log_dir.mkdir(exist_ok=True, parents=True)
+    
+    exps_by_status = defaultdict(list)
+    for e in experiments:
+        exps_by_status[e.status()].append(e)
+
+    for status, exps in exps_by_status.items():
+        print(f"{status}: {len(exps)}")
 
     match args.command:
         case "status":
-            pd.set_option("display.max_colwidth", None)
-            pd.set_option("display.max_rows", None)
-            pd.set_option("display.max_columns", None)
-            array = E1.as_array(experiments)
-            status = array.status(
-                exclude=["root", "openml_cache_directory"],
-                count=args.count,
-            )
-            print(status)
-            if args.out:
-                shrink_dataframe(status).to_parquet(args.out)
+            if args.out_dir is not None:
+                now = datetime.now().isoformat()
+                
+                pd.set_option("display.max_colwidth", None)
+                pd.set_option("display.max_rows", None)
+                pd.set_option("display.max_columns", None)
+                array = E1.as_array(experiments)
+                status = array.status(
+                    exclude=["root", "openml_cache_directory"],
+                    count=args.count,
+                )
+                
+                parent_dir = args.out_dir
+                parent_dir.mkdir(parents=True, exist_ok=True)
+                
+                out_path = parent_dir / f"status-{args.expname}_{now}.csv"
+                
+                status.to_csv(out_path)
+                print(f"Status saved to: {out_path}")
+                    
         case "collect":
             array = E1.as_array(experiments)
             if args.fail_early:
@@ -934,7 +960,21 @@ def main():  # noqa: C901, PLR0915, PLR0912
             print(f"Columns to load: {columns_to_load}")
 
             print(f"Collecting {len(array)} histories.")
-            _df = pd.concat([exp.history(columns=columns_to_load) for exp in array])
+            # _df = pd.concat([exp.history(columns=columns_to_load) for exp in array])
+
+            # Logic to skip failed experiments by @artem
+            histories = []
+            for exp in array:
+                try:
+                    history = exp.history(columns=columns_to_load)
+                    histories.append(history)
+                except (FileNotFoundError, pd.errors.EmptyDataError):
+                    if args.skip_failed:
+                        print(f"Skipping experiment: {exp.unique_path} (no history file found)")
+                    else:
+                        raise
+
+            _df = pd.concat(histories) if histories else pd.DataFrame()
 
             print(f"Collected {len(_df)} rows")
             print(f"Size: {round(_df.memory_usage().sum() / 1e6, 2)} MB")
@@ -944,25 +984,27 @@ def main():  # noqa: C901, PLR0915, PLR0912
                 f"Size after shrinking: {round(_df.memory_usage().sum() / 1e6, 2)} MB",
             )
             print(f"Writing parquet to {args.out}")
+
+            parent_dir = args.out.parent
+            parent_dir.mkdir(parents=True)
             _df.to_parquet(args.out)
 
         case "submit" | "run":
-            exps_by_status = defaultdict(list)
-            for e in experiments:
-                exps_by_status[e.status()].append(e)
-
-            for status, exps in exps_by_status.items():
-                print(f"{status}: {len(exps)}")
-
-            to_submit = list(
-                chain.from_iterable(exps_by_status[s] for s in args.overwrite_by),
-            )
+            if args.overwrite_all:
+                to_submit = list(
+                    chain.from_iterable(exps_by_status[s] for s in ["failed", "running", "pending", "success", "submitted"]),
+                )
+            else:
+                to_submit = list(
+                    chain.from_iterable(exps_by_status[s] for s in args.overwrite_by),
+                )
+                
             if not any(to_submit):
                 print(f"Nothing to run from {len(experiments)} experiments.")
                 sys.exit(0)
 
             if args.dry:
-                print(f"Would reset: {args.overwrite_by}")
+                print(f"Would reset: {args.overwrite_by if not args.overwrite_all else 'all'}")
                 sys.exit(0)
 
             for exp in to_submit:
@@ -972,22 +1014,32 @@ def main():  # noqa: C901, PLR0915, PLR0912
                 case "submit":
                     array = E1.as_array(to_submit)
                     first = array[0]
+                    
+                    slurm_headers = {
+                        # "partition": "ANON REPLACE ME",
+                        "mem": f"{first.memory_gb}G",
+                        "time": seconds_to_slurm_time(
+                            int(5 * 60 + first.time_seconds * 1.5),
+                        ),
+                        "cpus-per-task": first.n_cpus,
+                        "output": str(log_dir / "%j-%a.out"),
+                        "error": str(log_dir / "%j-%a.err"),
+                    }
+                    
+                    if args.mail_type:
+                        slurm_headers["mail-type"] = args.mail_type
+                    if args.mail_user:
+                        slurm_headers["mail-user"] = args.mail_user
+            
                     array.submit(
                         name=args.expname,
-                        slurm_headers={
-                            "partition": "ANON REPLACE ME",
-                            "mem": f"{first.memory_gb}G",
-                            "time": seconds_to_slurm_time(
-                                int(5 * 60 + first.time_seconds * 1.5),
-                            ),
-                            "cpus-per-task": first.n_cpus,
-                            "output": str(log_dir / "%j-%a.out"),
-                            "error": str(log_dir / "%j-%a.err"),
-                        },
+                        slurm_headers=slurm_headers,
                         python=None,  # Set explicitly if required.
                         script_dir=result_dir / "slurm-scripts",
                         sbatch=["sbatch"],
-                        limit=1,
+                        limit=None,
+                        job_array_limit=args.job_array_limit,
+                        chunk_start_idx=args.chunk_start_idx,
                     )
                 case "run":
                     for exp in to_submit:
