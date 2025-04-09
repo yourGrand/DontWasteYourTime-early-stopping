@@ -592,7 +592,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
     with cmds("status") as p:
         p.add_argument("--expname", choices=EXP_CHOICES, type=str, required=True)
         p.add_argument("--count", type=str, nargs="+", default=None)
-        p.add_argument("--out-dir", type=Path, required=True)
+        p.add_argument("--out-dir", type=Path, default=None)
 
     with cmds("collect") as p:
         p.add_argument("--expname", choices=EXP_CHOICES, type=str, required=True)
@@ -898,27 +898,35 @@ def main():  # noqa: C901, PLR0915, PLR0912
     script_dir.mkdir(exist_ok=True, parents=True)
     result_dir.mkdir(exist_ok=True, parents=True)
     log_dir.mkdir(exist_ok=True, parents=True)
+    
+    exps_by_status = defaultdict(list)
+    for e in experiments:
+        exps_by_status[e.status()].append(e)
+
+    for status, exps in exps_by_status.items():
+        print(f"{status}: {len(exps)}")
 
     match args.command:
         case "status":
-            now = datetime.now().isoformat()
-            
-            pd.set_option("display.max_colwidth", None)
-            pd.set_option("display.max_rows", None)
-            pd.set_option("display.max_columns", None)
-            array = E1.as_array(experiments)
-            status = array.status(
-                exclude=["root", "openml_cache_directory"],
-                count=args.count,
-            )
-            
-            parent_dir = args.out_dir
-            parent_dir.mkdir(parents=True, exist_ok=True)
-            
-            out_path = parent_dir / f"status-{args.expname}_{now}.csv"
-            
-            status.to_csv(out_path)
-            print(f"Status saved to: {out_path}")
+            if args.out_dir is not None:
+                now = datetime.now().isoformat()
+                
+                pd.set_option("display.max_colwidth", None)
+                pd.set_option("display.max_rows", None)
+                pd.set_option("display.max_columns", None)
+                array = E1.as_array(experiments)
+                status = array.status(
+                    exclude=["root", "openml_cache_directory"],
+                    count=args.count,
+                )
+                
+                parent_dir = args.out_dir
+                parent_dir.mkdir(parents=True, exist_ok=True)
+                
+                out_path = parent_dir / f"status-{args.expname}_{now}.csv"
+                
+                status.to_csv(out_path)
+                print(f"Status saved to: {out_path}")
                     
         case "collect":
             array = E1.as_array(experiments)
@@ -982,13 +990,6 @@ def main():  # noqa: C901, PLR0915, PLR0912
             _df.to_parquet(args.out)
 
         case "submit" | "run":
-            exps_by_status = defaultdict(list)
-            for e in experiments:
-                exps_by_status[e.status()].append(e)
-
-            for status, exps in exps_by_status.items():
-                print(f"{status}: {len(exps)}")
-
             if args.overwrite_all:
                 to_submit = list(
                     chain.from_iterable(exps_by_status[s] for s in ["failed", "running", "pending", "success", "submitted"]),
@@ -997,6 +998,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
                 to_submit = list(
                     chain.from_iterable(exps_by_status[s] for s in args.overwrite_by),
                 )
+                
             if not any(to_submit):
                 print(f"Nothing to run from {len(experiments)} experiments.")
                 sys.exit(0)
@@ -1016,9 +1018,9 @@ def main():  # noqa: C901, PLR0915, PLR0912
                     slurm_headers = {
                         # "partition": "ANON REPLACE ME",
                         "mem": f"{first.memory_gb}G",
-                        # "time": seconds_to_slurm_time(
-                        #     int(5 * 60 + first.time_seconds * 1.5),
-                        # ),
+                        "time": seconds_to_slurm_time(
+                            int(5 * 60 + first.time_seconds * 1.5),
+                        ),
                         "cpus-per-task": first.n_cpus,
                         "output": str(log_dir / "%j-%a.out"),
                         "error": str(log_dir / "%j-%a.err"),
