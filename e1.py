@@ -51,6 +51,7 @@ EXP_NAME: TypeAlias = Literal[
     "category6-nsplits-20",
     "category7-nsplits-20-unseeded",
     "category8-nsplits-20-unseeded",
+    "category9-nsplits-10-dynamic",
 ]
 EXP_CHOICES = [
     "debug",
@@ -77,6 +78,7 @@ EXP_CHOICES = [
     # ---
     "category7-nsplits-20-unseeded",  # MLP pipeline (2 repeat, 10 fold) (unseeded inner)
     "category8-nsplits-20-unseeded",  # RF pipeline (2 repeat, 10 fold) (unseeded inner)
+    "category9-nsplits-10-dynamic",  # MLP pipeline (dynamic forgiving)
 ]
 
 
@@ -149,6 +151,8 @@ def exp_name_to_result_dir(exp_name: EXP_NAME) -> Path:
             return Path("results-category7").resolve()
         case "category8-nsplits-20-unseeded":
             return Path("results-category8").resolve()
+        case "category9-nsplits-10-dynamic":
+            return Path("results-category9").resolve()
         case "debug":
             return Path("results-debug").resolve()
         case _:
@@ -241,6 +245,14 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                 "disabled",
                 "current_average_worse_than_best_worst_split",
                 "current_average_worse_than_mean_best",
+            ]
+        case "category9-nsplits-10-dynamic":
+            n_splits = [10]
+            methods = [
+                "disabled",
+                "current_average_worse_than_best_worst_split",
+                "current_average_worse_than_mean_best",
+                "dynamic_adaptive_forgiving",
             ]
         case "category4-nsplits-2-5":
             n_splits = [-5]  # This is a hack to run 2 repeats of 5 fold cv (sorry)
@@ -516,14 +528,6 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     n_splits,
                     opt_methods,
                 )
-            ]
-        case "category7-nsplits-10-dynamic":
-            n_splits = [10]
-            methods = [
-                "disabled",
-                "current_average_worse_than_best_worst_split",
-                "current_average_worse_than_mean_best",
-                "dynamic_adaptive_forgiving"
             ]
         case "debug":
             n_splits = [10]
