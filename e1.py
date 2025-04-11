@@ -517,6 +517,14 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                     opt_methods,
                 )
             ]
+        case "category7-nsplits-10-dynamic":
+            n_splits = [10]
+            methods = [
+                "disabled",
+                "current_average_worse_than_best_worst_split",
+                "current_average_worse_than_mean_best",
+                "dynamic_adaptive_forgiving"
+            ]
         case "debug":
             n_splits = [10]
             folds = [0]

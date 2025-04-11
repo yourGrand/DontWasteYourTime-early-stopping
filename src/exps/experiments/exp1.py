@@ -285,6 +285,14 @@ def run_it(run: E1) -> None:
     )
     try:
         if cv_early_stopping_method is not None:
+            # dynamic_adaptive_forgiving needs to know the number of splits
+            if run.cv_early_stop_strategy == "dynamic_adaptive_forgiving":
+                plugins = [
+                    evaluator.cv_early_stopping_plugin(
+                        strategy=cv_early_stopping_method(metric=metric, n_splits=run.n_splits),
+                    ),
+                ]
+                
             plugins = [
                 evaluator.cv_early_stopping_plugin(
                     strategy=cv_early_stopping_method(metric),

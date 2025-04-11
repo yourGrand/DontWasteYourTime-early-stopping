@@ -198,6 +198,89 @@ class CVEarlyStopCurrentAverageWorseThanBestWorstSplit:
                 return False
             case _:
                 raise ValueError("Invalid comparison")
+            
+            
+class CVEarlyStopDynamicAdaptiveForgiving:
+    def __init__(self, metric: Metric, n_splits: int, beta: float = 1.0):
+        super().__init__()
+        self.metric = metric
+        self.n_splits = n_splits
+        self.beta = beta
+        self.worst_score: float | None = None
+        self.mean_score: float | None = None
+
+    def update(self, report: Trial.Report) -> None:
+        if report.status is not Trial.Status.SUCCESS:
+            return
+
+        if self.worst_score is None or self.mean_score is None:
+            self.worst_score = self.worst_fold_value(report)
+            self.mean_score = self.mean_fold_value(report)
+            return
+
+        match self.metric.compare(
+            v1=report.values[self.metric.name],
+            v2=self.mean_score,
+        ):
+            case Metric.Comparison.BETTER:
+                self.worst_score = self.worst_fold_value(report)
+                self.mean_score = self.mean_fold_value(report)
+            case _:
+                pass
+            
+    def worst_fold_value(self, report: Trial.Report) -> float:
+        suffix = f"val_{self.metric.name}"
+        scores = (v for k, v in report.summary.items() if k.endswith(suffix))
+        worst = max(scores) if self.metric.minimize else min(scores)
+        return float(worst)
+    
+    def mean_fold_value(self, report: Trial.Report) -> float:
+        suffix = f"val_{self.metric.name}"
+        scores = [v for k, v in report.summary.items() if k.endswith(suffix)]
+        return float(np.mean(scores))
+    
+    def alpha(self, n: int) -> float:
+        """
+        alfa(n) is a monotonically increasing function of n (the fold index),
+        bounded between 0 and self.beta. It can be modified to shape how
+        quickly T_n moves from worst_score → mean_score as n grows.
+
+        Example linear ramp:
+        alfa(n) = min(β, ((n - 1) / (n_splits - 1)) * β)
+        where β =< 1.0 is a constant
+        """
+        if self.n_splits < 2:
+            return 0.0
+        
+        alpha_val = ((n - 1) / (self.n_splits - 1)) * self.beta
+        return min(self.beta, max(0.0, alpha_val))
+
+    def dynamic_threshold(self, n: int) -> float:
+        """
+        T_n = worst_score + alfa(n) * (mean_score - worst_score).
+        """
+        return self.worst_score + self.alpha(n) * (self.mean_score - self.worst_score)
+
+    def should_stop(
+        self,
+        trial: Trial,
+        scores: CVEvaluation.SplitScores,
+    ) -> bool:
+        if self.worst_score is None or self.mean_score is None:
+            return False
+
+        challenger = float(np.mean(scores.val[self.metric.name]))
+        n = len(scores.val[self.metric.name])  # how many folds have been evaluated so far
+
+        threshold = self._dynamic_threshold(n)
+
+        match self.metric.compare(v1=challenger, v2=threshold):
+            case Metric.Comparison.WORSE | Metric.Comparison.EQUAL:
+                return True
+            case Metric.Comparison.BETTER:
+                return False
+            case _:
+                raise ValueError("Invalid comparison result.")
 
 
 METHODS = {
@@ -214,4 +297,5 @@ METHODS = {
         n=5,
         sigma=1,
     ),
+    "dynamic_adaptive_forgiving": CVEarlyStopDynamicAdaptiveForgiving,
 }
