@@ -42,6 +42,8 @@ COLORS = {
     "robust_std_top_3": next(_colors),
     "robust_std_top_5": next(_colors),
     "both": next(_colors),
+    "dynamic_adaptive_forgiving": next(_colors),
+    "e_fold": next(_colors),
 }
 COLORS.update(
     {
@@ -75,6 +77,8 @@ MARKERS = {
     "robust_std_top_5": ">",
     "both": "s",
     "best": "X",
+    "dynamic_adaptive_forgiving": "P",
+    "e_fold": "*",
     # --- #
 }
 MARKERS.update(

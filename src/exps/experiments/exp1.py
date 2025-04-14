@@ -292,12 +292,12 @@ def run_it(run: E1) -> None:
                         strategy=cv_early_stopping_method(metric=metric, n_splits=run.n_splits),
                     ),
                 ]
-                
-            plugins = [
-                evaluator.cv_early_stopping_plugin(
-                    strategy=cv_early_stopping_method(metric),
-                ),
-            ]
+            else:
+                plugins = [
+                    evaluator.cv_early_stopping_plugin(
+                        strategy=cv_early_stopping_method(metric),
+                    ),
+                ]
         else:
             plugins = []
 

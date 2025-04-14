@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 
 EXP_NAME: TypeAlias = Literal[
     "debug",
+    "debug-1h",
     "reproduce",
     "time-analysis",
     "category3-nsplits-2-5",
@@ -55,6 +56,7 @@ EXP_NAME: TypeAlias = Literal[
 ]
 EXP_CHOICES = [
     "debug",
+    "debug-1h",
     "reproduce",
     "time-analysis",
     # -------
@@ -155,6 +157,8 @@ def exp_name_to_result_dir(exp_name: EXP_NAME) -> Path:
             return Path("results-category9").resolve()
         case "debug":
             return Path("results-debug").resolve()
+        case "debug-1h":
+            return Path("results-debug-1h").resolve()
         case _:
             raise ValueError(f"Unknown experiment set: {exp_name}")
 
@@ -253,6 +257,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                 "current_average_worse_than_best_worst_split",
                 "current_average_worse_than_mean_best",
                 "dynamic_adaptive_forgiving",
+                "e_fold",
             ]
         case "category4-nsplits-2-5":
             n_splits = [-5]  # This is a hack to run 2 repeats of 5 fold cv (sorry)
@@ -533,9 +538,15 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
             n_splits = [10]
             folds = [0]
             time_seconds = 300
-            methods = ["disabled"]
+            # methods = ["disabled"]
+            methods = ["dynamic_adaptive_forgiving"]
             n_cpu = 1
             suite = [359993]
+        case "debug-1h":
+            n_splits = [5]
+            folds = list(range(5))
+            methods = ["disabled", "dynamic_adaptive_forgiving", "e_fold"]
+            suite = [190392, 359979]
         case _:
             raise ValueError(f"Unknown experiment set: {name}")
 

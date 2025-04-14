@@ -272,7 +272,7 @@ class CVEarlyStopDynamicAdaptiveForgiving:
         challenger = float(np.mean(scores.val[self.metric.name]))
         n = len(scores.val[self.metric.name])  # how many folds have been evaluated so far
 
-        threshold = self._dynamic_threshold(n)
+        threshold = self.dynamic_threshold(n)
 
         match self.metric.compare(v1=challenger, v2=threshold):
             case Metric.Comparison.WORSE | Metric.Comparison.EQUAL:
@@ -281,6 +281,87 @@ class CVEarlyStopDynamicAdaptiveForgiving:
                 return False
             case _:
                 raise ValueError("Invalid comparison result.")
+            
+            
+class CVEarlyStopEFold:
+    def __init__(
+        self,
+        metric: Metric,
+        stability_threshold: int = 2,
+        stability_tolerance: float = 0.05,
+    ):
+        """
+        Args:
+            metric: The metric being optimized.
+            stability_threshold: How many consecutive times std dev must
+                                 decrease or stabilize to stop (count in paper).
+            stability_tolerance: The relative tolerance for checking if std dev
+                                 has stabilized (0.05 = 5% in paper).
+        """
+        super().__init__()
+        self.metric = metric
+        self.stability_threshold = stability_threshold
+        self.stability_tolerance = stability_tolerance
+
+        # State reset for each trial by the plugin mechanism implicitly
+        self.scores_list: list[float] = []
+        self.std_devs: list[float] = []
+        self.stability_count: int = 0
+
+    def update(self, report: Trial.Report) -> None:
+        """
+        This method is called after a trial completes.
+        e-Fold doesn't strictly need this as its logic is per-fold,
+        but we include it for consistency with the pattern, doing nothing.
+        """
+        pass
+
+    def should_stop(
+        self,
+        trial: Trial,
+        scores: CVEvaluation.SplitScores,
+    ) -> bool:
+        # Append the validation score for the current fold
+        # Assumes single metric optimization as per the rest of the code
+        current_fold_score = scores.val[self.metric.name][-1] # Get the last (current) fold score
+        self.scores_list.append(current_fold_score)
+
+        e = len(self.scores_list) # Current fold number (1-based index)
+
+        # Can't calculate std dev with 0 or 1 score
+        if e <= 1:
+            return False
+
+        # Calculate standard deviation for the current set of scores
+        # Use ddof=1 for sample standard deviation
+        current_std_dev = float(np.std(self.scores_list, ddof=1))
+        self.std_devs.append(current_std_dev)
+
+        # Stopping logic starts from the 3rd fold (e > 2)
+        if e <= 2:
+            return False
+
+        # Compare current std dev (sigma_e) with previous (sigma_{e-1})
+        prev_std_dev = self.std_devs[-2] # std_devs[-1] is current, [-2] is previous
+
+        # Check if std dev decreased
+        if current_std_dev < prev_std_dev:
+            self.stability_count += 1
+        # Check if std dev increased significantly (beyond tolerance)
+        elif abs(current_std_dev - prev_std_dev) > (self.stability_tolerance * prev_std_dev):
+            self.stability_count = 0 # Reset count
+        # Else: std dev remained stable (within tolerance)
+        else:
+            self.stability_count += 1
+
+        # Check if stability count reached the threshold
+        if self.stability_count >= self.stability_threshold:
+            # Optional: Log why stopping happened
+            print(f"Stopping trial {trial.name} at fold {e} due to stability count {self.stability_count}")
+            return True # Stop cross-validation
+
+        # Continue if stopping criterion not met
+        return False
 
 
 METHODS = {
@@ -298,4 +379,5 @@ METHODS = {
         sigma=1,
     ),
     "dynamic_adaptive_forgiving": CVEarlyStopDynamicAdaptiveForgiving,
+    "e_fold": CVEarlyStopEFold,
 }
