@@ -288,7 +288,7 @@ class CVEarlyStopEFold:
         self,
         metric: Metric,
         stability_threshold: int = 5,
-        stability_tolerance: float = 0.05,
+        stability_tolerance: float = 0.01,
     ):
         """
         Args:

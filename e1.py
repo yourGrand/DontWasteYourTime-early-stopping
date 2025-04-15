@@ -536,17 +536,17 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
             ]
         case "debug":
             n_splits = [10]
-            folds = [0, 1, 2, 3]
+            # folds = [0, 1, 2, 3]
             time_seconds = 300
             # methods = ["disabled"]
             methods = ["e_fold"]
             # n_cpu = 1
             suite = [146818]
         case "debug-1h":
-            n_splits = [5]
-            folds = list(range(5))
-            methods = ["disabled", "dynamic_adaptive_forgiving", "e_fold"]
-            suite = [190392, 359979]
+            n_splits = [10]
+            # folds = list(range(5))
+            methods = ["disabled", "e_fold"]
+            suite = [359968, 168350]
         case _:
             raise ValueError(f"Unknown experiment set: {name}")
 
