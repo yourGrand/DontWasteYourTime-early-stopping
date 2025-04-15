@@ -53,7 +53,10 @@ EXP_NAME: TypeAlias = Literal[
     "category7-nsplits-20-unseeded",
     "category8-nsplits-20-unseeded",
     "category9-nsplits-10-dynamic",
+    "category10-nsplits-10-dynamic",
 ]
+
+
 EXP_CHOICES = [
     "debug",
     "debug-1h",
@@ -80,8 +83,13 @@ EXP_CHOICES = [
     # ---
     "category7-nsplits-20-unseeded",  # MLP pipeline (2 repeat, 10 fold) (unseeded inner)
     "category8-nsplits-20-unseeded",  # RF pipeline (2 repeat, 10 fold) (unseeded inner)
+    # -------
     "category9-nsplits-10-dynamic",  # MLP pipeline (dynamic forgiving)
+    "category10-nsplits-10-dynamic",  # RF pipeline (dynamic forgiving)
 ]
+
+
+EXP_STATUS = ["running", "failed", "success", "submitted", "pending"]
 
 
 def cols_needed_for_plotting(
@@ -155,6 +163,8 @@ def exp_name_to_result_dir(exp_name: EXP_NAME) -> Path:
             return Path("results-category8").resolve()
         case "category9-nsplits-10-dynamic":
             return Path("results-category9").resolve()
+        case "category10-nsplits-10-dynamic":
+            return Path("results-category10").resolve()
         case "debug":
             return Path("results-debug").resolve()
         case "debug-1h":
@@ -257,7 +267,7 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                 "current_average_worse_than_best_worst_split",
                 "current_average_worse_than_mean_best",
                 "dynamic_adaptive_forgiving",
-                "e_fold",
+                # "e_fold",
             ]
         case "category4-nsplits-2-5":
             n_splits = [-5]  # This is a hack to run 2 repeats of 5 fold cv (sorry)
@@ -313,6 +323,16 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
                 "disabled",
                 "current_average_worse_than_best_worst_split",
                 "current_average_worse_than_mean_best",
+            ]
+        case "category10-nsplits-10-dynamic":
+            n_splits = [10]
+            pipeline = "rf_classifier"
+            methods = [
+                "disabled",
+                "current_average_worse_than_best_worst_split",
+                "current_average_worse_than_mean_best",
+                "dynamic_adaptive_forgiving",
+                # "e_fold",
             ]
         case "category5-nsplits-10":
             # We have to return specifically for this as we don't want a full product of
@@ -590,7 +610,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
         p.add_argument("--dry", action="store_true")
         p.add_argument(
             "--overwrite-by",
-            choices=["failed", "running", "pending", "success", "submitted"],
+            choices=EXP_STATUS,
             nargs="*",
             default=["pending"],
             type=str,
@@ -602,7 +622,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
         p.add_argument("--dry", action="store_true")
         p.add_argument(
             "--overwrite-by",
-            choices=["failed", "running", "pending", "success", "submitted"],
+            choices=EXP_STATUS,
             nargs="*",
             default=["pending"],
             type=str,
@@ -624,8 +644,14 @@ def main():  # noqa: C901, PLR0915, PLR0912
         p.add_argument("--ignore", nargs="+", type=str)
         p.add_argument("--out", type=Path, required=True)
         p.add_argument("--no-config", action="store_true")
-        p.add_argument("--skip-failed", action="store_true", 
-                   help="Skip failed experiments without history.parquet file")         
+        p.add_argument(
+            "--skip-status",
+            choices=EXP_STATUS,
+            nargs="*",
+            default=["failed"],
+            type=str,
+            help="Skip experiments with user defined status"
+        )         
 
     with cmds("plot-stacked") as p:
         p.add_argument("--outpath", type=Path, default=Path("./plots"))
@@ -984,19 +1010,25 @@ def main():  # noqa: C901, PLR0915, PLR0912
             print(f"Columns to load: {columns_to_load}")
 
             print(f"Collecting {len(array)} histories.")
-            # _df = pd.concat([exp.history(columns=columns_to_load) for exp in array])
 
             # Logic to skip failed experiments by @artem
             histories = []
             for exp in array:
-                try:
-                    history = exp.history(columns=columns_to_load)
-                    histories.append(history)
-                except (FileNotFoundError, pd.errors.EmptyDataError):
-                    if args.skip_failed:
-                        print(f"Skipping experiment: {exp.unique_path} (no history file found)")
-                    else:
-                        raise
+                # try:
+                #     history = exp.history(columns=columns_to_load)
+                #     histories.append(history)
+                # except (FileNotFoundError, pd.errors.EmptyDataError):
+                #     if args.skip_failed:
+                #         print(f"Skipping experiment: {exp.unique_path} (no history file found)")
+                #     else:
+                #         raise
+                
+                if args.skip_status and exp.status() in args.skip_status:
+                    print(f"Skipping experiment: {exp.unique_path} (status: {exp.status()})")
+                    continue
+                
+                history = exp.history(columns=columns_to_load)
+                histories.append(history)
 
             _df = pd.concat(histories) if histories else pd.DataFrame()
 

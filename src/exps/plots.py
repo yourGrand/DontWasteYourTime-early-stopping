@@ -44,6 +44,7 @@ COLORS = {
     "both": next(_colors),
     "dynamic_adaptive_forgiving": next(_colors),
     "e_fold": next(_colors),
+    "placeholder": next(_colors),
 }
 COLORS.update(
     {
@@ -79,6 +80,7 @@ MARKERS = {
     "best": "X",
     "dynamic_adaptive_forgiving": "P",
     "e_fold": "*",
+    "placeholder": "p",
     # --- #
 }
 MARKERS.update(
@@ -127,6 +129,7 @@ RENAMES: dict[str, str] = {
     "current_average_worse_than_best_worst_split": "Forgiving",
     "robust_std_top_3": "Robust 3",
     "robust_std_top_5": "Robust 5",
+    "dynamic_adaptive_forgiving": "Dynamic Adaptive Forgiving",
     # --- #
 }
 RENAMES.update(

@@ -326,9 +326,8 @@ class CVEarlyStopEFold:
         current_fold_score = scores.val[self.metric.name][-1] # Get the last (current) fold score
         self.scores_list.append(current_fold_score)
 
-        e = len(self.scores_list) # Current fold number (1-based index)
+        e = len(self.scores_list)
 
-        # Can't calculate std dev with 0 or 1 score
         if e <= 1:
             return False
 
@@ -342,7 +341,7 @@ class CVEarlyStopEFold:
             return False
 
         # Compare current std dev (sigma_e) with previous (sigma_{e-1})
-        prev_std_dev = self.std_devs[-2] # std_devs[-1] is current, [-2] is previous
+        prev_std_dev = self.std_devs[-2]
 
         # Check if std dev decreased
         if current_std_dev < prev_std_dev:
@@ -356,11 +355,9 @@ class CVEarlyStopEFold:
 
         # Check if stability count reached the threshold
         if self.stability_count >= self.stability_threshold:
-            # Optional: Log why stopping happened
             print(f"Stopping trial {trial.name} at fold {e} due to stability count {self.stability_count}")
-            return True # Stop cross-validation
+            return True
 
-        # Continue if stopping criterion not met
         return False
 
 
