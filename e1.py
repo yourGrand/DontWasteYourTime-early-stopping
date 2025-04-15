@@ -536,12 +536,12 @@ def experiment_set(name: EXP_NAME) -> list[E1]:
             ]
         case "debug":
             n_splits = [10]
-            folds = [0]
+            folds = [0, 1, 2, 3]
             time_seconds = 300
             # methods = ["disabled"]
-            methods = ["dynamic_adaptive_forgiving"]
-            n_cpu = 1
-            suite = [359993]
+            methods = ["e_fold"]
+            # n_cpu = 1
+            suite = [146818]
         case "debug-1h":
             n_splits = [5]
             folds = list(range(5))
@@ -595,6 +595,7 @@ def main():  # noqa: C901, PLR0915, PLR0912
             default=["pending"],
             type=str,
         )
+        p.add_argument("--overwrite-all", action="store_true")
 
     with cmds("submit") as p:
         p.add_argument("--expname", choices=EXP_CHOICES, type=str, required=True)

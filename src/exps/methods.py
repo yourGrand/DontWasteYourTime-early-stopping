@@ -287,7 +287,7 @@ class CVEarlyStopEFold:
     def __init__(
         self,
         metric: Metric,
-        stability_threshold: int = 2,
+        stability_threshold: int = 5,
         stability_tolerance: float = 0.05,
     ):
         """
